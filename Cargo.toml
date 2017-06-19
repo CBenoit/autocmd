@@ -1,0 +1,15 @@
+[package]
+name = "autocmd"
+version = "1.0.0"
+authors = ["Benoît C. <benoit.cortier@fried-world.eu>"]
+homepage = "https://github.com/CBenoit/autocmd"
+repository = "https://github.com/CBenoit/autocmd"
+keywords = ["command", "counter", "chronometer"]
+categories = ["command-line-interface", "command-line-utilities"]
+readme = "README.md"
+license = "MIT"
+
+[dependencies]
+colored = "1.5"
+clap = "2.19"
+
