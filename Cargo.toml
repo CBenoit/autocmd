@@ -10,6 +10,6 @@ readme = "README.md"
 license = "MIT"
 
 [dependencies]
-colored = "1.5"
-clap = "2.19"
+colored = "1.6"
+clap = "2"
 

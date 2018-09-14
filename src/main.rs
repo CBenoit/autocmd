@@ -5,52 +5,18 @@
 // modified, or distributed except according to those terms.         //
 ///////////////////////////////////////////////////////////////////////
 
+extern crate colored;
 #[macro_use]
 extern crate clap;
-extern crate colored;
+#[macro_use]
+extern crate autocmd;
 
 use std::process::Command;
-use std::thread;
 use std::time;
-use std::io::Write; // for stderr
 
 use colored::*;
 
-// conditional println macro
-macro_rules! cprintln {
-    ( $cond:ident ) => {
-        if $cond {
-            println!();
-        }
-    };
-    ( $cond:ident, $( $x:expr ),* ) => {
-        if $cond {
-            println!($( $x ),*);
-        }
-    };
-}
-
-// same as print but for stderr
-macro_rules! eprint {
-    ( $( $arg:tt )* ) => {
-        write!(&mut ::std::io::stderr(), $( $arg )*).expect("failed printing to stderr");
-    };
-}
-
-// same as println but for stderr
-macro_rules! eprintln {
-    ( $( $arg:tt )* ) => {
-        writeln!(&mut ::std::io::stderr(), $( $arg )*).expect("failed printing to stderr");
-    };
-}
-
-fn is_an_unsigned_integer(val: String) -> Result<(), String> {
-    if val.parse::<u64>().is_ok() {
-        Ok(())
-    } else {
-        Err(String::from("the value must be a positive integer."))
-    }
-}
+use autocmd::*;
 
 fn main() {
     let matches = clap_app!(AutoCMD =>
@@ -69,7 +35,11 @@ fn main() {
     let print_output = matches.is_present("print_output");
 
     // here the unwraps are safe since "interval" is required and checked by clap.
-    let interval_secs = matches.value_of("interval").unwrap().parse::<u64>().unwrap();
+    let interval_secs = matches
+        .value_of("interval")
+        .unwrap()
+        .parse::<u64>()
+        .unwrap();
 
     // safe since "command" is required by clap
     let full_command_str = get_full_command_str_from_values(matches.values_of("command").unwrap());
@@ -79,30 +49,55 @@ fn main() {
         command.arg(arg);
     }
 
-    cprintln!(verbose, "{} {}!\n", "AutoCMD".yellow().bold().italic(), "started".green().bold());
+    cprintln!(
+        verbose,
+        "{} {}!\n",
+        "AutoCMD".yellow().bold().italic(),
+        "started".green().bold()
+    );
 
     let waiting_duration = time::Duration::from_secs(interval_secs);
     match matches.value_of("repeats") {
-        None => loop {
-            match wait_and_run_once(verbose, waiting_duration, full_command_str.as_str(), &mut command, print_output) {
-                Ok(_) => (),
-                Err(_) => break
-            }
-        },
+        None => while let Ok(_) = wait_and_run_once(
+            verbose,
+            waiting_duration,
+            full_command_str.as_str(),
+            &mut command,
+            print_output,
+        ) {},
         Some(repeat_input) => {
-            // here the unwrap is safe since "repeat" is checked by clap.
+            // here the unwrap is safe since "repeats" is checked by clap.
             let number_of_repeats = repeat_input.parse::<u64>().unwrap();
             for remaining_repeats in (0..number_of_repeats).rev() {
-                match wait_and_run_once(verbose, waiting_duration, full_command_str.as_str(), &mut command, print_output) {
+                match wait_and_run_once(
+                    verbose,
+                    waiting_duration,
+                    full_command_str.as_str(),
+                    &mut command,
+                    print_output,
+                ) {
                     Ok(_) => (),
-                    Err(_) => break
+                    Err(_) => break,
                 }
 
                 if remaining_repeats > 0 {
-                    cprintln!(verbose, "{} repeats remaining.", remaining_repeats.to_string().yellow().bold());
+                    cprintln!(
+                        verbose,
+                        "{} repeats remaining.",
+                        remaining_repeats.to_string().yellow().bold()
+                    );
                 }
             }
         }
+    }
+}
+
+// cannot use &str and Result<(), &'static str> because of how clap handles validators.
+fn is_an_unsigned_integer(val: String) -> Result<(), String> {
+    if val.parse::<u64>().is_ok() {
+        Ok(())
+    } else {
+        Err(String::from("the value must be a positive integer."))
     }
 }
 
@@ -113,47 +108,3 @@ fn get_full_command_str_from_values(values: clap::Values) -> String {
     }
     vals_vec.join(" ")
 }
-
-fn wait_and_run_once(verbose: bool, waiting_duration: time::Duration,
-                     full_command_str: &str, command: &mut Command,
-                     print_output: bool) -> Result<(), ()> {
-    // === waiting ===
-    cprintln!(verbose, "Next command in {} seconds.", waiting_duration.as_secs().to_string().green().bold());
-    let now = time::Instant::now();
-    while waiting_duration - now.elapsed() > time::Duration::from_secs(60) {
-        thread::sleep(time::Duration::from_secs(60));
-        cprintln!(verbose, "{} seconds elapsed! {} seconds remaining.",
-                  now.elapsed().as_secs().to_string().green(),
-                  ((waiting_duration - now.elapsed()).as_secs() + 1).to_string().green());
-                                                              // ^ +1 for rounding
-    }
-    thread::sleep(waiting_duration - now.elapsed());
-    // === waiting finished ===
-
-    // === issue command ===
-    let output = match command.output() {
-        Ok(output) => output,
-        Err(e) => {
-            eprintln!("{}: {}\nReason: {}", "Failed to execute".red().bold(), full_command_str.blue().bold(), e);
-            return Err(());
-        }
-    };
-    cprintln!(verbose, "Issued command {}.", full_command_str.blue().bold());
-
-    if print_output {
-        if output.status.success() {
-            cprintln!(verbose, "Command {}:", "succeeded".green().bold());
-        } else {
-            cprintln!(verbose, "Command {}:", "failed".red().bold());
-        }
-
-        print!("{}", String::from_utf8_lossy(&output.stdout));
-        eprintln!("{}", String::from_utf8_lossy(&output.stderr));
-    } else {
-        cprintln!(verbose);
-    }
-    // === command issued ===
-
-    Ok(())
-}
-
